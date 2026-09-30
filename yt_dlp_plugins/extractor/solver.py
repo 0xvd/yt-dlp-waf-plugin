@@ -1,19 +1,22 @@
-import re
+from __future__ import annotations
+
+import base64
+import functools
+import hashlib
+import http.cookiejar
+import itertools
 import json
+import re
+import time
 import uuid
 import zlib
-import time
-import base64
-import hashlib
-import itertools
-import functools
-import http.cookiejar
-from typing import Callable, Optional
+from typing import Callable
 
-from yt_dlp.YoutubeDL import YoutubeDL
-from yt_dlp.utils import multipart_encode
 from yt_dlp.dependencies.Cryptodome import AES
 from yt_dlp.extractor.common import InfoExtractor
+from yt_dlp.utils import multipart_encode
+from yt_dlp.YoutubeDL import YoutubeDL
+
 
 def set_cookie(jar, domain, name, value):
     cookie = http.cookiejar.Cookie(
@@ -36,7 +39,10 @@ def set_cookie(jar, domain, name, value):
     )
     jar.set_cookie(cookie)
 
-_original_urlopen = getattr(YoutubeDL.urlopen, '__wrapped__', YoutubeDL.urlopen)
+
+_original_urlopen = getattr(
+    YoutubeDL.urlopen, '__wrapped__', YoutubeDL.urlopen)
+
 
 @functools.wraps(_original_urlopen)
 def _patched_urlopen(self, req):
@@ -45,17 +51,19 @@ def _patched_urlopen(self, req):
         return response
 
     body = response.read()
-    token, domains = AwfSolver(req.url, body, downloader=self).solve_challenge()
+    token, domains = AwfSolver(
+        req.url, body, downloader=self).solve_challenge()
     if not token:
         return response
     for d in domains:
         set_cookie(self.cookiejar, f'.{d}', 'aws-waf-token', token)
     return _original_urlopen(self, req)
 
+
 YoutubeDL.urlopen = _patched_urlopen
 
 
-class AwfSolver():
+class AwfSolver:
     def __init__(self, url=None, webpage=None, downloader=None):
         if webpage and downloader:
             self.ie = InfoExtractor(downloader=downloader)
@@ -63,7 +71,8 @@ class AwfSolver():
             self.url = url
             self.domain = None
             self.endpoint = None
-        self.key = bytes.fromhex("6f71a512b1e035eaab53d8be73120d3fb68a0ca346b9560aab3e5cdf753d5e98")
+        self.key = bytes.fromhex(
+            "6f71a512b1e035eaab53d8be73120d3fb68a0ca346b9560aab3e5cdf753d5e98")
         self.CHALLENGE_SOLVERS: dict[str, Callable] = {
             "h72f957df656e80ba55f5d8ce2e8c7ccb59687dba3bfb273d54b08a261b2f3002": self.compute_scrypt_nonce,
             "h7b0c470f0cfe3a80a9e26526ad185f484f6817d0832712a4a37a908786a6a67f": self.hash_pow,
@@ -71,7 +80,7 @@ class AwfSolver():
         }
 
     def encrypt(self, plaintext: bytes) -> str:
-        goku_prop_iv = self._goku_dict().get('iv')
+        goku_prop_iv = self._get_gokuProps().get('iv')
         iv_bytes = base64.b64decode(goku_prop_iv)
         cipher = AES.new(self.key, AES.MODE_GCM, nonce=iv_bytes, mac_len=16)
         ct, tag = cipher.encrypt_and_digest(plaintext)
@@ -99,16 +108,17 @@ class AwfSolver():
             "start": ts,
             "flashVersion": None,
             "plugins": [
-                { "name": "Chrome document Plugin", "str": "Chrome document Plugin " },
+                {"name": "Chrome document Plugin",
+                    "str": "Chrome document Plugin "},
                 {
                     "name": "Microsoft Edge PDF Viewer",
                     "str": "Microsoft Edge PDF Viewer "
                 },
-                { "name": "GDJEKNOP", "str": "GDJEKNOP 26140" },
-                { "name": "Chromium PDF Viewer", "str": "Chromium PDF Viewer " },
-                { "name": "WebKit built-in PDF", "str": "WebKit built-in PDF " },
-                { "name": "PDF Viewer", "str": "PDF Viewer " },
-                { "name": "Sw3jwg3", "str": "Sw3jwg3 143368" }
+                {"name": "GDJEKNOP", "str": "GDJEKNOP 26140"},
+                {"name": "Chromium PDF Viewer", "str": "Chromium PDF Viewer "},
+                {"name": "WebKit built-in PDF", "str": "WebKit built-in PDF "},
+                {"name": "PDF Viewer", "str": "PDF Viewer "},
+                {"name": "Sw3jwg3", "str": "Sw3jwg3 143368"}
             ],
             "dupedPlugins": "Chrome document Plugin Microsoft Edge PDF Viewer GDJEKNOP 26140Chromium PDF Viewer WebKit built-in PDF PDF Viewer Sw3jwg3 143368||1920-1080-1080-24-*-*-*",
             "screenInfo": "1920-1080-1080-24-*-*-*",
@@ -186,10 +196,10 @@ class AwfSolver():
                 "cos": "-0.5753861119575491"
             },
             "automation": {
-                "wd": { "properties": { "document": [], "window": [], "navigator": [] } },
-                "phantom": { "properties": { "window": [] } }
+                "wd": {"properties": {"document": [], "window": [], "navigator": []}},
+                "phantom": {"properties": {"window": []}}
             },
-            "stealth": { "t1": 0, "t2": 0, "i": 1, "mte": 0, "mtd": False },
+            "stealth": {"t1": 0, "t2": 0, "i": 1, "mte": 0, "mtd": False},
             "crypto": {
                 "crypto": 1,
                 "subtle": 1,
@@ -228,14 +238,15 @@ class AwfSolver():
             "formDetected": False,
             "numForms": 0,
             "numFormElements": 0,
-            "be": { "si": False },
+            "be": {"si": False},
             "end": ts + 2,
             "errors": [],
             "version": "2.4.0",
             "id": str(uuid.uuid4())
         }
 
-        payload = json.dumps(fingerprint, separators=(",", ":")).encode("utf-8")
+        payload = json.dumps(
+            fingerprint, separators=(",", ":")).encode("utf-8")
         crc = zlib.crc32(payload) & 0xFFFFFFFF
         checksum = f"{crc:08X}"
         plaintext = checksum.encode("ascii") + b"#" + payload
@@ -246,47 +257,49 @@ class AwfSolver():
         challenge = inputs['challenge']
         challenge_input = inputs['challenge']['input']
         challenge_type = inputs['challenge_type']
-        solution = self.CHALLENGE_SOLVERS[challenge_type](challenge_input, checksum, inputs['difficulty'])
+        solution = self.CHALLENGE_SOLVERS[challenge_type](
+            challenge_input, checksum, inputs['difficulty'])
 
         common = {
             "challenge": challenge,
             "solution": solution,
             "signals": [
                 {
-                "name": "Zoey",
-                "value": {
-                    "Present": fp
-                }
+                    "name": "Zoey",
+                    "value": {
+                        "Present": fp
+                    }
                 }
             ],
+            'gokuProps': self._get_gokuProps(),
             "checksum": checksum,
             "existing_token": "",
             "client": "Browser",
             "domain": self.domain,
             "metrics": [
-                { "name": "2", "value": 0.09999999962747097, "unit": "2" },
-                { "name": "100", "value": 1, "unit": "2" },
-                { "name": "102", "value": 0, "unit": "2" },
-                { "name": "111", "value": 90, "unit": "2" },
-                { "name": "103", "value": 12, "unit": "2" },
-                { "name": "104", "value": 0, "unit": "2" },
-                { "name": "105", "value": 0, "unit": "2" },
-                { "name": "106", "value": 0, "unit": "2" },
-                { "name": "107", "value": 0, "unit": "2" },
-                { "name": "110", "value": 0, "unit": "2" },
-                { "name": "108", "value": 0, "unit": "2" },
-                { "name": "101", "value": 0, "unit": "2" },
-                { "name": "115", "value": 0, "unit": "2" },
-                { "name": "114", "value": 3, "unit": "2" },
-                { "name": "112", "value": 0, "unit": "2" },
-                { "name": "3", "value": 0.7000000011175871, "unit": "2" },
-                { "name": "7", "value": 1, "unit": "4" },
-                { "name": "1", "value": 110.30000000074506, "unit": "2" },
-                { "name": "4", "value": 23, "unit": "2" },
-                { "name": "5", "value": 0.5, "unit": "2" },
-                { "name": "6", "value": 133.80000000074506, "unit": "2" },
-                { "name": "0", "value": 519.7999999988824, "unit": "2" },
-                { "name": "8", "value": 1, "unit": "4" }
+                {"name": "2", "value": 0.09999999962747097, "unit": "2"},
+                {"name": "100", "value": 1, "unit": "2"},
+                {"name": "102", "value": 0, "unit": "2"},
+                {"name": "111", "value": 90, "unit": "2"},
+                {"name": "103", "value": 12, "unit": "2"},
+                {"name": "104", "value": 0, "unit": "2"},
+                {"name": "105", "value": 0, "unit": "2"},
+                {"name": "106", "value": 0, "unit": "2"},
+                {"name": "107", "value": 0, "unit": "2"},
+                {"name": "110", "value": 0, "unit": "2"},
+                {"name": "108", "value": 0, "unit": "2"},
+                {"name": "101", "value": 0, "unit": "2"},
+                {"name": "115", "value": 0, "unit": "2"},
+                {"name": "114", "value": 3, "unit": "2"},
+                {"name": "112", "value": 0, "unit": "2"},
+                {"name": "3", "value": 0.7000000011175871, "unit": "2"},
+                {"name": "7", "value": 1, "unit": "4"},
+                {"name": "1", "value": 110.30000000074506, "unit": "2"},
+                {"name": "4", "value": 23, "unit": "2"},
+                {"name": "5", "value": 0.5, "unit": "2"},
+                {"name": "6", "value": 133.80000000074506, "unit": "2"},
+                {"name": "0", "value": 519.7999999988824, "unit": "2"},
+                {"name": "8", "value": 1, "unit": "4"}
             ]
         }
         if challenge_type == 'ha9faaffd31b4d5ede2a2e19d2d7fd525f66fee61911511960dcbb52d3c48ce25':
@@ -306,12 +319,11 @@ class AwfSolver():
         full, rem = divmod(difficulty, 8)
         if digest[:full] != b"\x00" * full:
             return False
-        if rem and (digest[full] >> (8 - rem)):
-            return False
-        return True
+        return not rem and (digest[full] >> (8 - rem))
 
-    def network_bandwidth(self, challenge: str, salt: str, difficulty: int, **kwargs) -> str:
-        sizes = {1: 0x400, 2: 0xA * 0x400, 3: 0x64 * 0x400, 4: 0x100000, 5: 0xA * 0x100000}
+    def network_bandwidth(self, challenge: str, salt: str, difficulty: int) -> str:
+        sizes = {1: 0x400, 2: 0xA * 0x400, 3: 0x64 *
+                 0x400, 4: 0x100000, 5: 0xA * 0x100000}
         try:
             size = int(sizes.get(difficulty, 0x400))
         except (TypeError, ValueError):
@@ -319,7 +331,7 @@ class AwfSolver():
         size = min(max(size, 0), 0xA * 0x100000)
         return base64.b64encode(b"\x00" * size).decode()
 
-    def hash_pow(self, challenge: str, salt: str, difficulty: int) -> Optional[str]:
+    def hash_pow(self, challenge: str, salt: str, difficulty: int) -> str | None:
         if difficulty > 256:
             return None
         prefix = (challenge + salt).encode()
@@ -341,7 +353,7 @@ class AwfSolver():
         r: int = 8,
         p: int = 1,
         dklen: int = 16,
-    ) -> Optional[str]:
+    ) -> str | None:
         prefix = challenge + salt
         for nonce in itertools.count():
             digest = hashlib.scrypt(
@@ -356,46 +368,21 @@ class AwfSolver():
                 return str(nonce)
         return None
 
-    def _extract_goku_props(self):
-        key = self.ie._search_regex(
-            r'["\']key["\']\s*:\s*["\'](?P<key>[^"\']+)["\']',
-            self.webpage,
-            'waf key',
-            default=None,
-            group='key',
-        )
-        iv = self.ie._search_regex(
-            r'["\']iv["\']\s*:\s*["\'](?P<iv>[^"\']+)["\']',
-            self.webpage,
-            'waf iv',
-            default=None,
-            group='iv',
-        )
-        if not key or not iv:
-            return None
-        self.iv = iv
-        return iv
-
-    def _goku_dict(self):
+    def _get_gokuProps(self):
         raw = self.ie._search_regex(
             r'window\.gokuProps\s*=\s*(\{.+?\})\s*;',
             self.webpage,
             'goku props',
             group=1,
             flags=re.DOTALL,
-        )
-        raw = raw.encode('utf-8').decode('unicode_escape')
+        ).encode('utf-8').decode('unicode_escape')
         return json.loads(raw)
 
     def solve_challenge(self):
-        headers = {
-            "accept": "*/*",
-            "origin": f"https://{self.domain}",
-            "referer": f"https://{self.domain}/",
-        }
-        self._extract_goku_props()
-        domains = self.ie._search_regex(r'window\.awsWaf[^=]+DomainList[^=]+=([^\[]+\[[^\[]+?]);', self.webpage, 'waf domains', None)
-        endpoint = self.ie._search_regex(r'["\'](http?s://.+awswaf.com/[^"\']+)(?:/challenge.js)"', self.webpage, 'awf waf endpoint', None)
+        domains = self.ie._search_regex(
+            r'window\.awsWaf[^=]+DomainList[^=]+=([^\[]+\[[^\[]+?]);', self.webpage, 'waf domains', None)
+        endpoint = self.ie._search_regex(
+            r'["\'](http?s://.+awswaf.com/[^"\']+)(?:/challenge.js)"', self.webpage, 'awf waf endpoint', None)
         if not domains:
             return None, []
         domains = re.findall(r'(?:\w+\.)?\w+\.\w+', str(domains))
@@ -403,7 +390,13 @@ class AwfSolver():
         if not self.domain:
             return None, []
         self.endpoint = endpoint
-        inputs = self.ie._download_json(f'{self.endpoint}/inputs', None, 'Downloading challenge inputs', query={'client': 'browser'})
+        headers = {
+            "accept": "*/*",
+            "origin": f"https://{self.domain}",
+            "referer": f"https://{self.domain}/",
+        }
+        inputs = self.ie._download_json(
+            f'{self.endpoint}/inputs', None, 'Downloading challenge inputs', query={'client': 'browser'})
         payload = self._build_payload(inputs)
         challege_response = None
         if inputs.get('challenge_type') == 'ha9faaffd31b4d5ede2a2e19d2d7fd525f66fee61911511960dcbb52d3c48ce25':
@@ -412,11 +405,9 @@ class AwfSolver():
                 'solution_data': payload['solution_data'],
             })
             challege_response = self.ie._download_json(f'{self.endpoint}/mp_verify', None, 'Solving challenge', headers={
-                    "content-type": content_type,
-                    **headers
-                },
-                data=data,
-                impersonate=True,
+                "content-type": content_type,
+                **headers
+            }, data=data, impersonate=True,
             )
         else:
             challege_response = self.ie._download_json(f'{self.endpoint}/verify', None, 'Solving challenge', headers={
